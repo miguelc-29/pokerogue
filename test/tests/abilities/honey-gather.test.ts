@@ -47,7 +47,8 @@ describe("Abilities - Honey Gather", () => {
     game.scene.money = 1000;
 
     game.move.select(MoveId.ROAR);
-    await game.toNextTurn();
+
+    await game.toNextWave();
 
     expect(game.scene.money).toBe(1000);
     expect(game.scene.currentBattle.waveIndex).toBe(2);
