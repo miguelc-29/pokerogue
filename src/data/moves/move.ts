@@ -7380,15 +7380,6 @@ export class ForceSwitchOutAttr extends MoveEffectAttr {
       if (!allyPokemon?.isActive(true) && switchOutTarget.hp) {
         globalScene.phaseManager.pushNew("BattleEndPhase", false);
 
-        if (globalScene.currentBattle.enemyFaints > 0) {
-          globalScene.phaseManager.pushNew("SelectModifierPhase");
-        } else {
-          globalScene.phaseManager.pushNew("SelectModifierPhase", 0, undefined, {
-            fillRemaining: false,
-            rerollMultiplier: -1,
-          });
-        }
-
         if (globalScene.gameMode.hasRandomBiomes || globalScene.isNewBiome()) {
           globalScene.phaseManager.pushNew("SelectBiomePhase");
         }
