@@ -1,10 +1,12 @@
 import { globalScene } from "#app/global-scene";
 import type { Challenge } from "#data/challenge";
 import { Button } from "#enums/buttons";
+import { ChallengeCategory } from "#enums/challenge-category";
 import { Challenges } from "#enums/challenges";
 import { Color, ShadowColor } from "#enums/color";
 import { TextStyle } from "#enums/text-style";
 import type { UiMode } from "#enums/ui-mode";
+import { TabMenu } from "#ui/containers/tab-menu";
 import { addTextObject } from "#ui/text";
 import { UiHandler } from "#ui/ui-handler";
 import { addWindow } from "#ui/ui-theme";
@@ -46,6 +48,14 @@ export class GameChallengesUiHandler extends UiHandler {
 
   private optionsWidth: number;
 
+  private tabMenu: TabMenu;
+  private readonly challengeCategories: ChallengeCategory[] = [
+    ChallengeCategory.RANDOMIZER,
+    ChallengeCategory.CHALLENGE,
+    ChallengeCategory.NUZLOCKE,
+    ChallengeCategory.MISC,
+  ];
+
   constructor(mode: UiMode | null = null) {
     super(mode);
   }
@@ -79,17 +89,23 @@ export class GameChallengesUiHandler extends UiHandler {
       .setOrigin(0)
       .setPositionRelative(headerBg, 8, 4);
 
+    const categoryNames = this.challengeCategories.map(cat => this.getCategoryName(cat));
+
+    this.tabMenu = new TabMenu(0, headerBg.height, canvasWidth, categoryNames, _newIndex => {
+      this.setCursor(0);
+      this.setScrollCursor(0);
+      this.initLabels();
+      this.updateText();
+    });
+
+    const contentY = headerBg.height + this.tabMenu.height;
+
     this.optionsWidth = canvasWidth * 0.6;
-    this.optionsBg = addWindow(0, headerBg.height, this.optionsWidth, canvasHeight - headerBg.height - 2)
+    this.optionsBg = addWindow(0, contentY, this.optionsWidth, canvasHeight - contentY - 2)
       .setName("window-options-bg")
       .setOrigin(0);
 
-    const descriptionBg = addWindow(
-      0,
-      headerBg.height,
-      canvasWidth - this.optionsWidth,
-      canvasHeight - headerBg.height - 26,
-    )
+    const descriptionBg = addWindow(0, contentY, canvasWidth - this.optionsWidth, canvasHeight - contentY - 26)
       .setName("window-desc-bg")
       .setOrigin(0)
       .setPositionRelative(this.optionsBg, this.optionsBg.width, 0);
@@ -129,7 +145,7 @@ export class GameChallengesUiHandler extends UiHandler {
       .setName("values");
 
     for (let i = 0; i < MAX_ROWS_TO_DISPLAY; i++) {
-      const label = addTextObject(8, 28 + i * 16, "", TextStyle.SETTINGS_LABEL)
+      const label = addTextObject(8, contentY + 4 + i * 16, "", TextStyle.SETTINGS_LABEL)
         .setName(`text-challenge-label-${i}`)
         .setOrigin(0);
 
@@ -147,7 +163,7 @@ export class GameChallengesUiHandler extends UiHandler {
         .setScale(0.75)
         .setVisible(false);
 
-      const value = addTextObject(0, 28 + i * 16, "", TextStyle.SETTINGS_LABEL)
+      const value = addTextObject(0, contentY + 4 + i * 16, "", TextStyle.SETTINGS_LABEL)
         .setName(`challenge-value-text-${i}`)
         .setPositionRelative(label, 100, 0);
 
@@ -157,7 +173,7 @@ export class GameChallengesUiHandler extends UiHandler {
     }
 
     this.monoTypeValue = globalScene.add
-      .sprite(8, 98, getLocalizedSpriteKey("types"))
+      .sprite(8, contentY + 74, getLocalizedSpriteKey("types"))
       .setName("challenge-value-monotype-sprite")
       .setScale(0.86)
       .setVisible(false);
@@ -166,6 +182,7 @@ export class GameChallengesUiHandler extends UiHandler {
     this.challengesContainer.add([
       headerBg,
       headerText,
+      this.tabMenu,
       // difficultyBg,
       // this.difficultyText,
       // difficultyName,
@@ -194,15 +211,38 @@ export class GameChallengesUiHandler extends UiHandler {
     this.descriptionText.setText(`[color=${Color.ORANGE}][shadow=${ShadowColor.ORANGE}]${text}`);
   }
 
+  private getCategoryName(category: ChallengeCategory): string {
+    const entry = Object.entries(ChallengeCategory).find(([, value]) => value === category);
+    const key = entry ? entry[0].toLowerCase() : "misc";
+
+    return i18next.t(`challenges:category.${key}`);
+  }
+
+  private getFilteredChallenges(): Challenge[] {
+    const activeCategory = this.tabMenu
+      ? this.challengeCategories[this.tabMenu.selectedIndex]
+      : ChallengeCategory.CHALLENGE;
+
+    return globalScene.gameMode.challenges.filter(c => c.category === activeCategory);
+  }
+
   private initLabels(): void {
-    const { challenges } = globalScene.gameMode;
+    const challenges = this.getFilteredChallenges();
 
-    this.setDescription(challenges[0].getDescription());
+    if (challenges.length > 0) {
+      this.setDescription(challenges[0].getDescription());
+    } else {
+      this.setDescription("");
+    }
+
     for (let i = 0; i < MAX_ROWS_TO_DISPLAY; i++) {
-      if (i >= challenges.length) {
-        break;
-      }
+      this.challengeLabels[i].label.setVisible(false);
+      this.challengeLabels[i].value.setVisible(false);
+      this.challengeLabels[i].leftArrow.setVisible(false);
+      this.challengeLabels[i].rightArrow.setVisible(false);
+    }
 
+    for (let i = 0; i < Math.min(MAX_ROWS_TO_DISPLAY, challenges.length); i++) {
       this.challengeLabels[i].label.setVisible(true);
       this.challengeLabels[i].value.setVisible(true);
       this.challengeLabels[i].leftArrow.setVisible(true);
@@ -240,15 +280,33 @@ export class GameChallengesUiHandler extends UiHandler {
   }
 
   private updateText(): void {
-    const { challenges } = globalScene.gameMode;
+    const challenges = this.getFilteredChallenges();
 
     /** Used to get the display width of the current option */
     const tempText = addTextObject(0, 0, "", TextStyle.SETTINGS_LABEL);
-    this.setDescription(this.getActiveChallenge().getDescription());
+
+    if (challenges.length > 0) {
+      this.setDescription(this.getActiveChallenge().getDescription());
+    } else {
+      this.setDescription("");
+    }
+
     let monoTypeVisible = false;
-    for (let i = 0; i < Math.min(MAX_ROWS_TO_DISPLAY, challenges.length); i++) {
+    for (let i = 0; i < MAX_ROWS_TO_DISPLAY; i++) {
       const challenge = challenges[this.scrollCursor + i];
       const challengeLabel = this.challengeLabels[i];
+
+      if (!challenge) {
+        challengeLabel.label.setVisible(false);
+        challengeLabel.value.setVisible(false);
+        challengeLabel.leftArrow.setVisible(false);
+        challengeLabel.rightArrow.setVisible(false);
+        continue;
+      }
+
+      challengeLabel.label.setVisible(true);
+      challengeLabel.rightArrow.setVisible(true);
+      challengeLabel.leftArrow.setVisible(true);
 
       challengeLabel.label.setText(challenge.getName());
 
@@ -290,7 +348,8 @@ export class GameChallengesUiHandler extends UiHandler {
       this.monoTypeValue.setVisible(false);
     }
 
-    this.hasSelectedChallenge = challenges.some(c => c.value !== 0);
+    this.hasSelectedChallenge = globalScene.gameMode.challenges.some(c => c.value !== 0);
+
     let i18nKey = "common:start";
     let alphaValue = 1;
     if (!this.hasSelectedChallenge) {
@@ -308,13 +367,19 @@ export class GameChallengesUiHandler extends UiHandler {
   public override show(args: any[]): boolean {
     super.show(args);
 
-    const { challenges } = globalScene.gameMode;
+    if (this.tabMenu) {
+      this.tabMenu.setIndex(1);
+      this.tabMenu.updateIcons();
+    }
 
     this.startCursor.setVisible(false);
     this.updateChallengeArrowsTint(false);
     this.challengesContainer.setVisible(true);
-    this.hasSelectedChallenge = challenges.some(c => c.value !== 0);
+
+    this.hasSelectedChallenge = globalScene.gameMode.challenges.some(c => c.value !== 0);
+
     this.setCursor(0);
+    this.setScrollCursor(0);
 
     this.initLabels();
     this.updateText();
@@ -327,7 +392,7 @@ export class GameChallengesUiHandler extends UiHandler {
   }
 
   private updateChallengeArrowsTint(tinted: boolean): void {
-    const { challenges } = globalScene.gameMode;
+    const challenges = this.getFilteredChallenges();
 
     for (let i = 0; i < Math.min(MAX_ROWS_TO_DISPLAY, challenges.length); i++) {
       const challengeLabel = this.challengeLabels[i];
@@ -354,9 +419,7 @@ export class GameChallengesUiHandler extends UiHandler {
    */
   public override processInput(button: Button): boolean {
     const ui = this.getUi();
-    const { gameMode, phaseManager } = globalScene;
-    const { challenges } = gameMode;
-
+    const { phaseManager } = globalScene;
     let success = false;
 
     if (button === Button.CANCEL) {
@@ -371,6 +434,8 @@ export class GameChallengesUiHandler extends UiHandler {
         phaseManager.getCurrentPhase().end();
       }
       success = true;
+    } else if (button === Button.CYCLE_FORM || button === Button.CYCLE_SHINY) {
+      success = this.tabMenu.navigate(button);
     } else if (button === Button.SUBMIT || button === Button.ACTION) {
       if (this.hasSelectedChallenge) {
         if (this.startCursor.visible) {
@@ -386,6 +451,8 @@ export class GameChallengesUiHandler extends UiHandler {
         success = false;
       }
     } else if (this.cursorObj?.visible && !this.startCursor.visible) {
+      const challenges = this.getFilteredChallenges();
+
       switch (button) {
         case Button.UP:
           if (this.cursor === 0) {
@@ -436,15 +503,19 @@ export class GameChallengesUiHandler extends UiHandler {
           }
           break;
         case Button.LEFT:
-          success = this.getActiveChallenge().decreaseValue();
-          if (success) {
-            this.updateText();
+          if (challenges.length > 0) {
+            success = this.getActiveChallenge().decreaseValue();
+            if (success) {
+              this.updateText();
+            }
           }
           break;
         case Button.RIGHT:
-          success = this.getActiveChallenge().increaseValue();
-          if (success) {
-            this.updateText();
+          if (challenges.length > 0) {
+            success = this.getActiveChallenge().increaseValue();
+            if (success) {
+              this.updateText();
+            }
           }
           break;
       }
@@ -487,7 +558,7 @@ export class GameChallengesUiHandler extends UiHandler {
   }
 
   private getActiveChallenge(): Challenge {
-    return globalScene.gameMode.challenges[this.cursor + this.scrollCursor];
+    return this.getFilteredChallenges()[this.cursor + this.scrollCursor];
   }
 
   public override clear(): void {
