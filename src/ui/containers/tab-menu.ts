@@ -46,7 +46,7 @@ export class TabMenu extends Phaser.GameObjects.Container {
     this.add(iconNextTab);
 
     this.updateTabs();
-    this.updateIcons();
+    // this.updateIcons();
   }
 
   public updateTabs(): void {

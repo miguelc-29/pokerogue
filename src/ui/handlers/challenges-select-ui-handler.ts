@@ -35,6 +35,11 @@ export class GameChallengesUiHandler extends UiHandler {
   // private difficultyText: Phaser.GameObjects.Text;
 
   private descriptionText: BBCodeText;
+  private descriptionScrollTween: Phaser.Tweens.Tween | null;
+  private descriptionTextBaseY: number;
+  private descriptionTextMaxHeight: number;
+  private descriptionTextMaskRect: Phaser.GameObjects.Graphics | null;
+  private homeKey: Phaser.Input.Keyboard.Key | null;
 
   private readonly challengeLabels: ChallengeLabel[] = [];
   private monoTypeValue: Phaser.GameObjects.Sprite;
@@ -63,6 +68,9 @@ export class GameChallengesUiHandler extends UiHandler {
   public override setup(): void {
     const ui = this.getUi();
     const { width: canvasWidth, height: canvasHeight } = globalScene.scaledCanvas;
+
+    this.homeKey = globalScene.input.keyboard?.addKey(Phaser.Input.Keyboard.KeyCodes.HOME) ?? null;
+    this.homeKey?.on("up", this.onHomeDown, this);
 
     this.challengesContainer = globalScene.add //
       .container(1, -canvasHeight + 1)
@@ -98,14 +106,20 @@ export class GameChallengesUiHandler extends UiHandler {
       this.updateText();
     });
 
+    const footerHeight = 22;
     const contentY = headerBg.height + this.tabMenu.height;
 
     this.optionsWidth = canvasWidth * 0.6;
-    this.optionsBg = addWindow(0, contentY, this.optionsWidth, canvasHeight - contentY - 2)
+    this.optionsBg = addWindow(0, contentY, this.optionsWidth, canvasHeight - contentY - footerHeight)
       .setName("window-options-bg")
       .setOrigin(0);
 
-    const descriptionBg = addWindow(0, contentY, canvasWidth - this.optionsWidth, canvasHeight - contentY - 26)
+    const descriptionBg = addWindow(
+      0,
+      contentY,
+      canvasWidth - this.optionsWidth,
+      canvasHeight - contentY - footerHeight - 24,
+    )
       .setName("window-desc-bg")
       .setOrigin(0)
       .setPositionRelative(this.optionsBg, this.optionsBg.width, 0);
@@ -122,6 +136,20 @@ export class GameChallengesUiHandler extends UiHandler {
       .setShadow(4, 5, ShadowColor.ORANGE)
       .setOrigin(0);
     globalScene.add.existing(this.descriptionText);
+    this.descriptionTextBaseY = this.descriptionText.y;
+    this.descriptionTextMaxHeight = descriptionBg.height - 8;
+
+    this.descriptionTextMaskRect = globalScene.make.graphics({});
+    this.descriptionTextMaskRect.setScale(6);
+    this.descriptionTextMaskRect.fillStyle(0xffffff);
+    this.descriptionTextMaskRect.beginPath();
+    this.descriptionTextMaskRect.fillRect(
+      descriptionBg.x + 6,
+      descriptionBg.y + 4,
+      descriptionBg.width - 12,
+      this.descriptionTextMaxHeight,
+    );
+    this.descriptionText.setMask(this.descriptionTextMaskRect.createGeometryMask());
 
     this.startBg = addWindow(0, 0, descriptionBg.width, 24)
       .setName("window-start-bg")
@@ -137,8 +165,19 @@ export class GameChallengesUiHandler extends UiHandler {
       .nineslice(0, 0, "summary_moves_cursor", undefined, descriptionBg.width - 8, 16, 1, 1, 1, 1)
       .setName("9s-start-cursor")
       .setOrigin(0)
-      .setPositionRelative(this.startBg, 4, 3)
+      .setPositionRelative(this.startBg, 4, 5)
       .setVisible(false);
+
+    const footerBg = addWindow(0, canvasHeight - footerHeight, canvasWidth, footerHeight)
+      .setName("window-reset-bg")
+      .setOrigin(0);
+    const iconReset = globalScene.add.sprite(0, 0, "keyboard").setFrame("HOME.png");
+    iconReset.setOrigin(0, -0.1);
+    iconReset.setPositionRelative(footerBg, 8, 4);
+
+    const resetText = addTextObject(0, 0, i18next.t("settings:reset"), TextStyle.SETTINGS_LABEL);
+    resetText.setOrigin(0, 0.15);
+    resetText.setPositionRelative(iconReset, 26, 0);
 
     this.valuesContainer = globalScene.add //
       .container(0, 0)
@@ -192,6 +231,9 @@ export class GameChallengesUiHandler extends UiHandler {
       this.startBg,
       this.startText,
       this.startCursor,
+      footerBg,
+      iconReset,
+      resetText,
       this.valuesContainer,
     ]);
 
@@ -209,6 +251,31 @@ export class GameChallengesUiHandler extends UiHandler {
    */
   private setDescription(text: string): void {
     this.descriptionText.setText(`[color=${Color.ORANGE}][shadow=${ShadowColor.ORANGE}]${text}`);
+    this.updateDescriptionScroll();
+  }
+
+  private updateDescriptionScroll(): void {
+    if (this.descriptionScrollTween) {
+      this.descriptionScrollTween.remove();
+      this.descriptionScrollTween = null;
+    }
+
+    this.descriptionText.setY(this.descriptionTextBaseY);
+    const overflow = this.descriptionText.displayHeight - this.descriptionTextMaxHeight;
+    if (overflow <= 0) {
+      return;
+    }
+
+    this.descriptionScrollTween = globalScene.tweens.add({
+      targets: this.descriptionText,
+      delay: 3200,
+      hold: 3200,
+      repeatDelay: 3200,
+      repeat: -1,
+      yoyo: true,
+      duration: Math.max(3200, overflow * 44),
+      y: `-=${overflow}`,
+    });
   }
 
   private getCategoryName(category: ChallengeCategory): string {
@@ -527,6 +594,25 @@ export class GameChallengesUiHandler extends UiHandler {
     return success;
   }
 
+  private onHomeDown(): void {
+    if (!this.challengesContainer.visible) {
+      return;
+    }
+
+    this.resetChallengesToDefault();
+  }
+
+  private resetChallengesToDefault(): void {
+    for (const challenge of globalScene.gameMode.challenges) {
+      challenge.reset();
+    }
+
+    this.startCursor.setVisible(false);
+    this.cursorObj?.setVisible(true);
+    this.updateChallengeArrowsTint(false);
+    this.updateText();
+  }
+
   public override setCursor(cursor: number): boolean {
     let ret = super.setCursor(cursor);
 
@@ -564,7 +650,28 @@ export class GameChallengesUiHandler extends UiHandler {
   public override clear(): void {
     super.clear();
     this.challengesContainer.setVisible(false);
+    if (this.descriptionScrollTween) {
+      this.descriptionScrollTween.remove();
+      this.descriptionScrollTween = null;
+    }
     this.eraseCursor();
+  }
+
+  public override destroy(): void {
+    super.destroy();
+
+    this.homeKey?.off("up", this.onHomeDown, this);
+    this.homeKey = null;
+
+    if (this.descriptionScrollTween) {
+      this.descriptionScrollTween.remove();
+      this.descriptionScrollTween = null;
+    }
+
+    this.descriptionText.clearMask(true);
+    this.descriptionTextMaskRect = null;
+
+    this.challengesContainer?.destroy();
   }
 
   private eraseCursor(): void {
